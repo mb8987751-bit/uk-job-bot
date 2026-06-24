@@ -118,6 +118,7 @@ class LinkedInScraper:
             await asyncio.sleep(5)
 
         await self._dismiss_modal()
+        await asyncio.sleep(2)
 
         card_selectors = [
             ".job-card-container",
@@ -132,6 +133,11 @@ class LinkedInScraper:
             '[data-job-id]',
             ".display-flex > li",
             ".jobs-search-results--list",
+            '.jobs-search-results-list li',
+            '[data-view-name="job-card"]',
+            '[data-view-name="search-entity"]',
+            '.reusable-search__result-container',
+            'li[data-reusable-list-item]',
         ]
 
         cards = []
@@ -146,6 +152,16 @@ class LinkedInScraper:
 
         if not cards:
             logger.warning("No job cards found with any selector")
+            html = await self.page.evaluate("""() => {
+                const main = document.querySelector('[role="main"], #main, .jobs-search-results');
+                if (!main) return 'NO_MAIN';
+                return main.innerHTML.substring(0, 5000);
+            }""")
+            logger.info(f"Main area HTML: {html}")
+            jobs = await self._extract_jobs_via_js(keyword)
+            if jobs:
+                logger.info(f"Extracted {len(jobs)} jobs via JS fallback")
+                return jobs
             return jobs
 
         max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
@@ -204,6 +220,39 @@ class LinkedInScraper:
                 continue
 
         logger.info(f"Found {len(jobs)} LinkedIn jobs for '{keyword}'")
+        return jobs
+
+    async def _extract_jobs_via_js(self, keyword: str) -> list[dict]:
+        data = await self.page.evaluate("""() => {
+            const results = [];
+            const allText = document.body.innerText;
+            const lines = allText.split('\\n').filter(l => l.trim());
+            const skipWords = ['Sign in', 'password', 'email', 'username', 'Skip to', 'Dismiss', 'Join now'];
+            const isLoginPage = skipWords.some(w => allText.includes(w));
+            if (isLoginPage && !allText.includes('jobs')) return results;
+
+            const links = document.querySelectorAll('a[href*="/jobs/view"]');
+            for (const link of links) {
+                const title = link.innerText || link.title || '';
+                if (title.trim() && title.length < 200 && !title.includes('javascript')) {
+                    results.push({ title: title.trim(), url: link.href });
+                }
+            }
+            return results;
+        }""")
+        jobs = []
+        seen = set()
+        for item in data:
+            if item["title"] not in seen:
+                seen.add(item["title"])
+                jobs.append({
+                    "title": item["title"],
+                    "company": "Unknown",
+                    "location": "Remote UK",
+                    "description": "",
+                    "url": item["url"],
+                    "platform": "linkedin",
+                })
         return jobs
 
     async def _dismiss_modal(self):
