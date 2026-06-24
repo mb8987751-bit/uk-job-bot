@@ -22,6 +22,7 @@ assets/resume_template.pdf
 
 # Playwright
 user_data/
+data/linkedin_session/
 
 # OS
 .DS_Store
