@@ -28,7 +28,15 @@ async def process_jobs(jobs: list[dict], applier, tracker: ApplicationTracker, p
             logger.info(f"Already applied: {job['title']} at {job['company']}")
             continue
 
-        success = await applier.apply(job)
+        try:
+            success = await asyncio.wait_for(applier.apply(job), timeout=60)
+        except asyncio.TimeoutError:
+            logger.info(f"Job timed out: {job['title']}")
+            success = False
+        except Exception as e:
+            logger.debug(f"Job error: {e}")
+            success = False
+
         if success:
             tracker.record_application(
                 url=job["url"],
