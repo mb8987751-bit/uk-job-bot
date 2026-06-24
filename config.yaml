@@ -46,7 +46,7 @@ bot_settings:
   headless: true
   human_delay_min: 3
   human_delay_max: 7
-  max_daily_applications: 5
+  max_daily_applications: 50
   session_timeout_minutes: 45
 
 resume:
