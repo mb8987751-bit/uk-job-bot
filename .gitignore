@@ -13,6 +13,7 @@ env/
 # Data
 data/*.db
 data/*.log
+data/*.json
 data/generated_resumes/*
 data/exports/*.csv
 

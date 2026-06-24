@@ -1,6 +1,8 @@
 ﻿import asyncio
 import random
-from urllib.parse import quote, urlencode
+import json
+import os
+from urllib.parse import urlencode
 
 from src.utils.browser import BrowserManager
 from src.utils.logger import logger
@@ -11,29 +13,67 @@ from src.config import Config
 class LinkedInScraper:
     BASE_URL = "https://www.linkedin.com"
     LOGIN_URL = f"{BASE_URL}/login"
+    COOKIE_FILE = "data/linkedin_cookies.json"
 
     def __init__(self, browser: BrowserManager):
         self.browser = browser
         self.page = browser.page
         self.config = settings["job_search"]["linkedin"]
 
+    async def _load_cookies(self):
+        if os.path.exists(self.COOKIE_FILE):
+            with open(self.COOKIE_FILE) as f:
+                cookies = json.load(f)
+            await self.page.context.add_cookies(cookies)
+            logger.info("Loaded saved cookies")
+            return True
+        return False
+
+    async def _save_cookies(self):
+        cookies = await self.page.context.cookies()
+        os.makedirs(os.path.dirname(self.COOKIE_FILE), exist_ok=True)
+        with open(self.COOKIE_FILE, "w") as f:
+            json.dump(cookies, f)
+        logger.info("Saved cookies")
+
     async def login(self):
         logger.info("Logging into LinkedIn...")
+
+        await self._load_cookies()
+        await self.page.goto(self.BASE_URL, wait_until="domcontentloaded")
+        await asyncio.sleep(3)
+
+        if "feed" in self.page.url or "checkpoint" not in self.page.url:
+            logger.info("Cookies worked - already logged in")
+            return
+
+        logger.info("Cookies expired, trying form login...")
         await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
         await asyncio.sleep(3)
 
-        if "feed" in self.page.url or "checkpoint" in self.page.url:
-            logger.info("Already logged in to LinkedIn")
+        if "feed" in self.page.url:
+            logger.info("Already logged in")
             return
 
-        await self.page.fill("#username", Config.LINKEDIN_EMAIL)
+        username_sel = await self.page.wait_for_selector("#username", timeout=10000)
+        if not username_sel:
+            logger.error("LinkedIn login form not found (CAPTCHA/block)")
+            return False
+
+        await username_sel.fill(Config.LINKEDIN_EMAIL)
         await asyncio.sleep(random.uniform(1, 2))
         await self.page.fill("#password", Config.LINKEDIN_PASSWORD)
         await asyncio.sleep(random.uniform(1, 2))
         await self.page.click('button[type="submit"]')
         await asyncio.sleep(5)
 
-        logger.info(f"LinkedIn login result: {self.page.url}")
+        if "feed" in self.page.url:
+            logger.info("LinkedIn login successful")
+            await self._save_cookies()
+            return True
+
+        logger.warning(f"LinkedIn login may have failed. URL: {self.page.url}")
+        return False
 
     def _build_search_url(self, keyword: str) -> str:
         params = {
@@ -96,7 +136,10 @@ class LinkedInScraper:
         return jobs
 
     async def run(self) -> list[dict]:
-        await self.login()
+        logged_in = await self.login()
+        if not logged_in:
+            logger.warning("Skipping LinkedIn - login failed")
+            return []
         all_jobs = []
         for keyword in self.config["keywords"]:
             jobs = await self.search_jobs(keyword)
