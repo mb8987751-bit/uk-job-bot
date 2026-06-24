@@ -38,6 +38,16 @@ jobs:
           echo "EMAIL=${{ secrets.EMAIL }}" >> .env
           echo "CITY=${{ secrets.CITY }}" >> .env
 
+      - name: Restore LinkedIn cookies
+        run: |
+          if [ -n "${{ secrets.LINKEDIN_COOKIES }}" ]; then
+            mkdir -p data
+            echo "${{ secrets.LINKEDIN_COOKIES }}" | base64 -d > data/linkedin_cookies.json
+            echo "Cookies restored"
+          else
+            echo "No cookies secret set"
+          fi
+
       - name: Run bot
         run: python main.py
 
