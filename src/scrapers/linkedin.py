@@ -102,15 +102,16 @@ class LinkedInScraper:
 
         url = self._build_search_url(keyword)
         logger.info(f"LinkedIn searching: {keyword}")
-        logger.info(f"Navigating to: {url}")
         await self.page.goto(url, wait_until="domcontentloaded")
-        await asyncio.sleep(10)
+        await asyncio.sleep(5)
 
         jobs = []
         current_url = self.page.url
         page_title = await self.page.title()
         logger.info(f"Current URL: {current_url}")
         logger.info(f"Page title: {page_title}")
+
+        await self._dismiss_modal()
 
         try:
             await self.page.wait_for_selector('[class*="job-card"]', timeout=20000)
@@ -212,6 +213,27 @@ class LinkedInScraper:
 
         logger.info(f"Found {len(jobs)} LinkedIn jobs for '{keyword}'")
         return jobs
+
+    async def _dismiss_modal(self):
+        modal_selectors = [
+            ".contextual-sign-in-modal__modal-dismiss-icon",
+            "button[aria-label='Dismiss']",
+            ".artdeco-modal__dismiss",
+            '[data-test-modal-close-btn]',
+            ".modal__dismiss",
+            'button:has(svg use[href*="close"])',
+        ]
+        for sel in modal_selectors:
+            try:
+                btn = await self.page.query_selector(sel)
+                if btn:
+                    await btn.click()
+                    await asyncio.sleep(1)
+                    logger.info(f"Dismissed modal with: {sel}")
+                    return True
+            except Exception:
+                continue
+        return False
 
     async def run(self) -> list[dict]:
         logged_in = await self.login()
