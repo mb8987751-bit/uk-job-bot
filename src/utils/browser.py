@@ -1,20 +1,22 @@
 ﻿import asyncio
 import random
-from playwright.async_api import async_playwright, Browser, Page, Playwright
+from playwright.async_api import async_playwright, Browser, Page
 
 from src.settings import settings
 
 
 class BrowserManager:
     def __init__(self):
-        self.playwright: Playwright | None = None
+        self._ctx = None
+        self.playwright = None
         self.browser: Browser | None = None
         self.page: Page | None = None
 
     async def start(self, headless: bool = None):
         if headless is None:
             headless = settings["bot_settings"]["headless"]
-        self.playwright = await async_playwright().__aenter__()
+        self._ctx = async_playwright()
+        self.playwright = await self._ctx.__aenter__()
         self.browser = await self.playwright.chromium.launch(
             headless=headless,
             args=[
@@ -37,8 +39,8 @@ class BrowserManager:
     async def close(self):
         if self.browser:
             await self.browser.close()
-        if self.playwright:
-            await self.playwright.__aexit__(None, None, None)
+        if self._ctx:
+            await self._ctx.__aexit__(None, None, None)
 
     async def human_delay(self, min_s: float = None, max_s: float = None):
         if min_s is None:
