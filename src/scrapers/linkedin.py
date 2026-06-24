@@ -40,10 +40,10 @@ class LinkedInScraper:
         logger.info("Logging into LinkedIn...")
 
         await self._load_cookies()
-        await self.page.goto(self.BASE_URL, wait_until="domcontentloaded")
+        await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded")
         await asyncio.sleep(3)
 
-        if "feed" in self.page.url or "checkpoint" not in self.page.url:
+        if "feed" in self.page.url:
             logger.info("Cookies worked - already logged in")
             return True
 
@@ -51,13 +51,16 @@ class LinkedInScraper:
         await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
         await asyncio.sleep(3)
 
-        if "feed" in self.page.url:
-            logger.info("Already logged in")
-            return True
+        current_url = self.page.url
+        page_title = await self.page.title()
+        logger.info(f"Login page URL: {current_url}, Title: {page_title}")
 
         username_sel = await self.page.wait_for_selector("#username", timeout=10000)
         if not username_sel:
             logger.error("LinkedIn login form not found (CAPTCHA/block)")
+            await self.page.screenshot(path="data/login_failed.png", full_page=True)
+            body = await self.page.evaluate("document.body.innerText.substring(0, 1000)")
+            logger.info(f"Login page body: {body}")
             return False
 
         await username_sel.fill(Config.LINKEDIN_EMAIL)
@@ -73,7 +76,15 @@ class LinkedInScraper:
             return True
 
         logger.warning(f"LinkedIn login may have failed. URL: {self.page.url}")
+        await self.page.screenshot(path="data/login_submit_failed.png", full_page=True)
         return False
+
+    async def ensure_logged_in(self):
+        await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded")
+        await asyncio.sleep(3)
+        if "feed" in self.page.url:
+            return True
+        return await self.login()
 
     def _build_search_url(self, keyword: str) -> str:
         params = {
@@ -88,6 +99,11 @@ class LinkedInScraper:
         return f"{self.BASE_URL}/jobs/search/?{urlencode(params)}"
 
     async def search_jobs(self, keyword: str) -> list[dict]:
+        ok = await self.ensure_logged_in()
+        if not ok:
+            logger.warning("Skipping LinkedIn search - not logged in")
+            return []
+
         url = self._build_search_url(keyword)
         logger.info(f"LinkedIn searching: {keyword}")
         logger.info(f"Navigating to: {url}")
