@@ -82,7 +82,6 @@ class LinkedInScraper:
             "f_AL": "true",
             "f_E": "2",
             "f_WT": "2",
-            "f_JT": "F",
             "position": "1",
             "pageNum": "0",
         }
@@ -95,42 +94,83 @@ class LinkedInScraper:
         await asyncio.sleep(5)
 
         jobs = []
-        try:
-            await self.page.wait_for_selector(".job-card-container", timeout=15000)
-            cards = await self.page.query_selector_all(".job-card-container")
-            max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
+        card_selectors = [
+            ".job-card-container",
+            ".job-card-list",
+            ".jobs-search-results__list-item",
+            "li[data-occludable-job-id]",
+            "article",
+        ]
 
-            for i in range(max_cards):
-                try:
-                    cards = await self.page.query_selector_all(".job-card-container")
-                    if i >= len(cards):
+        cards = []
+        for sel in card_selectors:
+            cards = await self.page.query_selector_all(sel)
+            if cards:
+                logger.info(f"Found cards using selector: {sel}")
+                break
+
+        if not cards:
+            logger.warning("No job cards found with any selector")
+            body = await self.page.query_selector("body")
+            if body:
+                text = await body.inner_text()
+                logger.info(f"Page snippet: {text[:200]}")
+            return jobs
+
+        max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
+        for i in range(max_cards):
+            try:
+                cards = await self.page.query_selector_all(card_selectors[0])
+                if not cards:
+                    cards = await self.page.query_selector_all(card_selectors[1])
+                if not cards or i >= len(cards):
+                    break
+
+                await cards[i].click()
+                await asyncio.sleep(2)
+
+                title = keyword
+                company = "Unknown"
+                location = "Remote UK"
+                description = ""
+
+                for sel in [".job-details-jobs-unified-top-card__job-title",
+                            ".job-details__title",
+                            "h1",
+                            ".t-16.t-bold"]:
+                    el = await self.page.query_selector(sel)
+                    if el:
+                        title = (await el.inner_text()).strip()
                         break
-                    await cards[i].click()
-                    await asyncio.sleep(2)
 
-                    title_el = await self.page.query_selector(".job-details-jobs-unified-top-card__job-title")
-                    company_el = await self.page.query_selector(".job-details-jobs-unified-top-card__company-name")
-                    location_el = await self.page.query_selector(".job-details-jobs-unified-top-card__workplace-type")
-                    desc_el = await self.page.query_selector(".job-details-jobs-unified-top-card__description")
+                for sel in [".job-details-jobs-unified-top-card__company-name",
+                            ".job-details__company",
+                            ".job-card-container__company-name",
+                            '[data-testid="company-name"]']:
+                    el = await self.page.query_selector(sel)
+                    if el:
+                        company = (await el.inner_text()).strip()
+                        break
 
-                    title = await title_el.inner_text() if title_el else keyword
-                    company = await company_el.inner_text() if company_el else "Unknown"
-                    location = await location_el.inner_text() if location_el else "Remote UK"
-                    description = await desc_el.inner_text() if desc_el else ""
+                for sel in [".job-details-jobs-unified-top-card__workplace-type",
+                            ".job-details__location",
+                            ".job-card-container__metadata-wrapper"]:
+                    el = await self.page.query_selector(sel)
+                    if el:
+                        location = (await el.inner_text()).strip()
+                        break
 
-                    jobs.append({
-                        "title": title.strip(),
-                        "company": company.strip(),
-                        "location": location.strip(),
-                        "description": description.strip(),
-                        "url": self.page.url,
-                        "platform": "linkedin",
-                    })
-                except Exception as e:
-                    logger.debug(f"LinkedIn card {i} error: {e}")
-                    continue
-        except Exception as e:
-            logger.warning(f"No LinkedIn job cards found: {e}")
+                jobs.append({
+                    "title": title,
+                    "company": company,
+                    "location": location,
+                    "description": description,
+                    "url": self.page.url,
+                    "platform": "linkedin",
+                })
+            except Exception as e:
+                logger.debug(f"LinkedIn card {i} error: {e}")
+                continue
 
         logger.info(f"Found {len(jobs)} LinkedIn jobs for '{keyword}'")
         return jobs
