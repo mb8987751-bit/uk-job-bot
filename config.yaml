@@ -2,20 +2,32 @@
   linkedin:
     enabled: true
     keywords:
-      - "software engineer"
-      - "data analyst"
-      - "web developer"
-      - "junior developer"
-      - "graduate"
+      - "data entry"
+      - "virtual assistant"
+      - "customer service"
+      - "admin assistant"
+      - "content moderator"
+      - "chat support"
+      - "call centre"
+      - "transcrioptionist"
+      - "copywriter"
+      - "online researcher"
+      - "social media assistant"
+      - "email support"
+      - "appointment setter"
+      - "data processor"
+      - "proofreader"
+      - "order processing"
       - "entry level"
+      - "remote assistant"
+      - "graduate"
       - "trainee"
-      - "associate"
     location: "United Kingdom"
     work_type: "remote"
-    experience_level: ["entry"]
-    job_type: ["full-time"]
+    experience_level: ["entry", "internship"]
+    job_type: ["full-time", "part-time", "contract"]
     date_posted: "past_week"
-    max_applications_per_run: 30
+    max_applications_per_run: 50
 
   indeed:
     enabled: false
