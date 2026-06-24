@@ -50,12 +50,24 @@ class ApplicationTracker:
         conn.close()
         return row is not None
 
-    def record_application(self, url: str, title: str, company: str, platform: str, location: str):
+    def update_status(self, url: str, new_status: str):
+        conn = self._get_conn()
+        conn.execute("UPDATE applications SET status = ? WHERE url = ?", (new_status, url))
+        conn.commit()
+        conn.close()
+
+    def get_status(self, url: str) -> str | None:
+        conn = self._get_conn()
+        row = conn.execute("SELECT status FROM applications WHERE url = ?", (url,)).fetchone()
+        conn.close()
+        return row["status"] if row else None
+
+    def record_application(self, url: str, title: str, company: str, platform: str, location: str, status: str = "tracked"):
         conn = self._get_conn()
         try:
             conn.execute(
-                "INSERT OR IGNORE INTO applications (url, title, company, platform, location) VALUES (?, ?, ?, ?, ?)",
-                (url, title, company, platform, location),
+                "INSERT OR IGNORE INTO applications (url, title, company, platform, location, status) VALUES (?, ?, ?, ?, ?, ?)",
+                (url, title, company, platform, location, status),
             )
             today = date.today().isoformat()
             conn.execute(
