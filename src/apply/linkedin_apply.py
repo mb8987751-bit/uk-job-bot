@@ -1,17 +1,31 @@
 ﻿import asyncio
-import json
 import random
+import os
 
 from src.utils.browser import BrowserManager
 from src.utils.logger import logger
 from src.config import Config
+from src.ai.gemini import ResumeGenerator
+
+
+RESUME_FILE = "data/base_resume.txt"
 
 
 class LinkedInApply:
-    def __init__(self, browser: BrowserManager):
+    def __init__(self, browser: BrowserManager, resume_text: str = ""):
         self.browser = browser
         self.page = browser.page
         self.page.set_default_timeout(25000)
+        self.resume_text = resume_text
+        self.resume_gen = ResumeGenerator()
+
+    def _load_resume(self) -> str:
+        if self.resume_text:
+            return self.resume_text
+        if os.path.exists(RESUME_FILE):
+            with open(RESUME_FILE, "r", encoding="utf-8") as f:
+                return f.read()
+        return ""
 
     async def apply(self, job: dict) -> bool:
         try:
@@ -21,7 +35,7 @@ class LinkedInApply:
             return False
 
     async def _apply_with_timeout(self, job: dict) -> bool:
-        logger.info(f"LinkedIn applying: {job['title']} at {job['company']}")
+        logger.info(f"LinkedIn applying: {job['title']}")
 
         navigated = await self.page.evaluate(f"""
             async () => {{
@@ -38,9 +52,11 @@ class LinkedInApply:
             logger.info(f"Redirected to login - skip: {job['title']}")
             return False
 
+        await self._extract_job_details(job)
+
         easy_btn = await self._find_easy_apply()
         if not easy_btn:
-            logger.info(f"No Easy Apply: {job['title']} at {job['company']}")
+            logger.info(f"No Easy Apply: {job['title']}")
             return False
 
         try:
@@ -57,6 +73,41 @@ class LinkedInApply:
 
         return await self._fill_form(job)
 
+    async def _extract_job_details(self, job: dict):
+        data = await self.page.evaluate("""() => {
+            const descEl = document.querySelector('.show-more-less-html__markup, article.description, div[class*="description"], div[class*="job-details"]');
+            const companyEl = document.querySelector('.job-details-jobs-unified-top-card__company-name a, a[class*="company"], div[class*="company"]');
+            return {
+                description: descEl ? descEl.innerText.trim().substring(0, 3000) : '',
+                company: companyEl ? companyEl.innerText.trim() : ''
+            };
+        }""")
+        if data.get("company"):
+            job["company"] = data["company"]
+        if data.get("description"):
+            job["description"] = data["description"]
+
+    async def _generate_cover_letter(self, job: dict) -> str:
+        resume = self._load_resume()
+        if Config.GEMINI_API_KEY and resume:
+            full_prompt = f"""Write a professional cover letter (3-4 paragraphs) for a {job['title']} position at {job.get('company', 'the company')}.
+
+Job Description: {job.get('description', '')[:2000]}
+
+Applicant Resume:
+{resume[:2000]}
+
+The applicant is based in Pakistan and authorized to work remotely for UK companies.
+Keep it concise, professional, and tailored to the job. Use the applicant's experience from the resume."""
+            try:
+                response = self.resume_gen.client.models.generate_content(
+                    model="gemini-2.0-flash", contents=full_prompt
+                )
+                return response.text
+            except Exception as e:
+                logger.warning(f"Gemini cover letter failed: {e}")
+        return f"I am excited to apply for the {job['title']} position and bring my skills to your team."
+
     async def _find_easy_apply(self):
         for _ in range(10):
             btn = await self.page.query_selector('button[aria-label*="Easy Apply"], .jobs-apply-button')
@@ -66,6 +117,8 @@ class LinkedInApply:
         return None
 
     async def _fill_form(self, job: dict) -> bool:
+        cover_letter = None
+
         for step in range(10):
             await asyncio.sleep(random.uniform(1, 2))
 
@@ -78,6 +131,10 @@ class LinkedInApply:
 
             await self._fill_visible_fields(job)
             await self._handle_radio_questions()
+
+            if cover_letter is None:
+                cover_letter = await self._generate_cover_letter(job)
+            await self._fill_textarea(cover_letter)
 
             if submit_btn:
                 try:
@@ -100,6 +157,18 @@ class LinkedInApply:
                 await asyncio.sleep(1)
 
         return False
+
+    async def _fill_textarea(self, text: str):
+        textareas = await self.page.query_selector_all("textarea")
+        for ta in textareas:
+            try:
+                if await ta.is_visible():
+                    current = await ta.input_value()
+                    if not current.strip():
+                        await ta.fill(text[:2000])
+                        await asyncio.sleep(0.5)
+            except Exception:
+                continue
 
     async def _fill_visible_fields(self, job: dict):
         inputs = await self.page.query_selector_all('input:not([type="hidden"]):not([type="file"])')

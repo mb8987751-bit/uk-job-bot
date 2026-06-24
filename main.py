@@ -20,6 +20,14 @@ async def main():
     browser = BrowserManager(user_data_dir=user_data_dir)
     await browser.start()
 
+    resume_text = ""
+    resume_path = "data/base_resume.txt"
+    if os.path.exists(resume_path):
+        with open(resume_path, "r", encoding="utf-8") as f:
+            resume_text = f.read().strip()
+        if len(resume_text) < 50:
+            resume_text = ""
+
     total_applied = 0
     total_skipped = 0
 
@@ -32,7 +40,7 @@ async def main():
             jobs = await scraper.run()
             logger.info(f"LinkedIn: found {len(jobs)} jobs")
 
-            applier = LinkedInApply(browser)
+            applier = LinkedInApply(browser, resume_text=resume_text)
             limit = linkedin_cfg.get("max_applications_per_run", 50)
             daily_max = settings["bot_settings"]["max_daily_applications"]
             today_count = tracker.get_today_count()

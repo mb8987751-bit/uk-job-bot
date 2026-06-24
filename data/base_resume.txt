@@ -1,0 +1,12 @@
+PASTE YOUR RESUME TEXT HERE
+
+Include your full work experience, education, skills, and certifications.
+This will be used by Gemini to generate tailored cover letters per job.
+
+Example:
+- Current/Past job titles, companies, dates
+- Key responsibilities and achievements
+- Education degrees and institutions
+- Technical and soft skills
+- Languages
+- Certifications
