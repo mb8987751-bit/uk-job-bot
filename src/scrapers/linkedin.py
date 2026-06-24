@@ -45,7 +45,7 @@ class LinkedInScraper:
 
         if "feed" in self.page.url or "checkpoint" not in self.page.url:
             logger.info("Cookies worked - already logged in")
-            return
+            return True
 
         logger.info("Cookies expired, trying form login...")
         await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
@@ -53,7 +53,7 @@ class LinkedInScraper:
 
         if "feed" in self.page.url:
             logger.info("Already logged in")
-            return
+            return True
 
         username_sel = await self.page.wait_for_selector("#username", timeout=10000)
         if not username_sel:
