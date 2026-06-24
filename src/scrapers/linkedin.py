@@ -91,14 +91,19 @@ class LinkedInScraper:
         url = self._build_search_url(keyword)
         logger.info(f"LinkedIn searching: {keyword}")
         logger.info(f"Navigating to: {url}")
-        await self.page.goto(url, wait_until="networkidle")
-        await asyncio.sleep(5)
+        await self.page.goto(url, wait_until="domcontentloaded")
+        await asyncio.sleep(10)
 
         jobs = []
         current_url = self.page.url
         page_title = await self.page.title()
         logger.info(f"Current URL: {current_url}")
         logger.info(f"Page title: {page_title}")
+
+        try:
+            await self.page.wait_for_selector('[class*="job-card"]', timeout=20000)
+        except Exception:
+            pass
 
         card_selectors = [
             ".job-card-container",
@@ -108,6 +113,11 @@ class LinkedInScraper:
             "article",
             ".scaffold-layout__list",
             ".jobs-search-two-panel__list-item",
+            ".jobs-search-results-list",
+            '[class*="job-card"]',
+            '[data-job-id]',
+            ".display-flex > li",
+            ".jobs-search-results--list",
         ]
 
         cards = []
@@ -115,20 +125,22 @@ class LinkedInScraper:
             try:
                 cards = await self.page.query_selector_all(sel)
                 if cards:
-                    logger.info(f"Found cards using selector: {sel}")
+                    logger.info(f"Found {len(cards)} cards using: {sel}")
                     break
             except Exception:
                 continue
 
         if not cards:
             logger.warning("No job cards found with any selector")
-            body_text = await self.page.evaluate("document.body.innerText.substring(0, 2000)")
-            logger.info(f"Page body: {body_text}")
-            try:
-                await self.page.screenshot(path=f"data/linkedin_debug_{keyword.replace(' ', '_')}.png", full_page=True)
-                logger.info("Screenshot saved")
-            except Exception as e:
-                logger.warning(f"Screenshot failed: {e}")
+            main_html = await self.page.evaluate("""() => {
+                const main = document.querySelector('#main, .jobs-search-results, [role="main"], .scaffold-layout__list, .jobs-search-results-list');
+                return main ? main.innerHTML.substring(0, 8000) : 'NO_MAIN_ELEM';
+            }""")
+            logger.info(f"Main HTML: {main_html}")
+            all_html = await self.page.evaluate("document.body.innerHTML.substring(0, 3000)")
+            logger.info(f"Body HTML first 3k: {all_html}")
+            await self.page.screenshot(path=f"data/linkedin_debug_{keyword.replace(' ', '_')}.png", full_page=True)
+            logger.info("Screenshot saved")
             return jobs
 
         max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
