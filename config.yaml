@@ -27,7 +27,7 @@
     experience_level: ["entry", "internship"]
     job_type: ["full-time", "part-time", "contract"]
     date_posted: "past_week"
-    max_applications_per_run: 50
+    max_applications_per_run: 150
 
   indeed:
     enabled: false
@@ -46,8 +46,8 @@ bot_settings:
   headless: true
   human_delay_min: 3
   human_delay_max: 7
-  max_daily_applications: 50
-  session_timeout_minutes: 45
+  max_daily_applications: 200
+  session_timeout_minutes: 90
 
 resume:
   template_path: "assets/resume_template.pdf"
