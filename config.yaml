@@ -27,7 +27,7 @@
     experience_level: ["entry", "internship"]
     job_type: ["full-time", "part-time", "contract"]
     date_posted: "past_week"
-    max_applications_per_run: 3
+    max_applications_per_run: 50
 
   indeed:
     enabled: false
