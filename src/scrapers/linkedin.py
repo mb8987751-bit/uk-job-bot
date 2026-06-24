@@ -26,15 +26,12 @@ class LinkedInScraper:
                 cookies = json.load(f)
             await self.page.context.add_cookies(cookies)
             logger.info("Loaded saved cookies")
+            os.remove(self.COOKIE_FILE)
             return True
         return False
 
     async def _save_cookies(self):
-        cookies = await self.page.context.cookies()
-        os.makedirs(os.path.dirname(self.COOKIE_FILE), exist_ok=True)
-        with open(self.COOKIE_FILE, "w") as f:
-            json.dump(cookies, f)
-        logger.info("Saved cookies")
+        pass
 
     async def login(self):
         logger.info("Logging into LinkedIn...")
@@ -72,7 +69,6 @@ class LinkedInScraper:
 
         if "feed" in self.page.url:
             logger.info("LinkedIn login successful")
-            await self._save_cookies()
             return True
 
         logger.warning(f"LinkedIn login may have failed. URL: {self.page.url}")

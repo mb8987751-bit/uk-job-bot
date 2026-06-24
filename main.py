@@ -46,7 +46,8 @@ async def main():
     logger.info("Starting UK Job Auto-Apply Bot")
     tracker = ApplicationTracker()
 
-    browser = BrowserManager()
+    user_data_dir = os.environ.get("PLAYWRIGHT_USER_DATA_DIR")
+    browser = BrowserManager(user_data_dir=user_data_dir)
     await browser.start()
 
     total_applied = 0

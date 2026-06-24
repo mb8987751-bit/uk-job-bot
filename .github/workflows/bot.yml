@@ -19,6 +19,20 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}
+
+      - name: Cache LinkedIn session
+        uses: actions/cache@v4
+        with:
+          path: data/linkedin_session
+          key: linkedin-session-${{ runner.os }}-${{ hashFiles('data/linkedin_cookies.json') }}
+          restore-keys: |
+            linkedin-session-${{ runner.os }}-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -30,22 +44,21 @@ jobs:
         run: |
           echo "LINKEDIN_EMAIL=${{ secrets.LINKEDIN_EMAIL }}" >> .env
           echo "LINKEDIN_PASSWORD=${{ secrets.LINKEDIN_PASSWORD }}" >> .env
-          echo "INDEED_EMAIL=${{ secrets.INDEED_EMAIL }}" >> .env
-          echo "INDEED_PASSWORD=${{ secrets.INDEED_PASSWORD }}" >> .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "FULL_NAME=${{ secrets.FULL_NAME }}" >> .env
           echo "PHONE=${{ secrets.PHONE }}" >> .env
           echo "EMAIL=${{ secrets.EMAIL }}" >> .env
           echo "CITY=${{ secrets.CITY }}" >> .env
+          echo "PLAYWRIGHT_USER_DATA_DIR=data/linkedin_session" >> .env
 
       - name: Restore LinkedIn cookies
         run: |
-          if [ -n "${{ secrets.LINKEDIN_COOKIES }}" ]; then
+          if [ -n "${{ secrets.LINKEDIN_COOKIES }}" ] && [ ! -f data/linkedin_session/Default/Cookies ]; then
             mkdir -p data
             echo "${{ secrets.LINKEDIN_COOKIES }}" | base64 -d > data/linkedin_cookies.json
-            echo "Cookies restored"
+            echo "Cookies restored for bootstrap"
           else
-            echo "No cookies secret set"
+            echo "Using cached session or no cookies secret"
           fi
 
       - name: Run bot
