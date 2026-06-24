@@ -1,5 +1,6 @@
 ﻿import logging
 import sys
+import os
 
 
 def setup_logger(name: str = "uk-job-bot", level: str = None) -> logging.Logger:
@@ -24,6 +25,7 @@ def setup_logger(name: str = "uk-job-bot", level: str = None) -> logging.Logger:
         pass
 
     if log_file:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
         fh = logging.FileHandler(log_file)
         fh.setFormatter(fmt)
         logger.addHandler(fh)
