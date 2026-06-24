@@ -1,0 +1,46 @@
+﻿job_search:
+  linkedin:
+    enabled: true
+    keywords:
+      - "software engineer"
+      - "data analyst"
+      - "web developer"
+      - "junior developer"
+      - "graduate"
+      - "entry level"
+      - "trainee"
+      - "associate"
+    location: "United Kingdom"
+    work_type: "remote"
+    experience_level: ["entry"]
+    job_type: ["full-time"]
+    date_posted: "past_week"
+    max_applications_per_run: 30
+
+  indeed:
+    enabled: false
+    keywords:
+      - "software engineer"
+      - "junior developer"
+      - "graduate"
+      - "entry level"
+    location: "United Kingdom"
+    remote_only: true
+    experience_level: "entry"
+    date_posted: "last_7_days"
+    max_applications_per_run: 0
+
+bot_settings:
+  headless: true
+  human_delay_min: 3
+  human_delay_max: 7
+  max_daily_applications: 50
+  session_timeout_minutes: 45
+
+resume:
+  template_path: "assets/resume_template.pdf"
+  output_dir: "data/generated_resumes"
+
+logging:
+  level: "INFO"
+  file: "data/bot.log"

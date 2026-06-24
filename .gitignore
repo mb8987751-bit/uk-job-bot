@@ -1,0 +1,31 @@
+﻿# Environment files
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.venv/
+venv/
+env/
+
+# Data
+data/*.db
+data/*.log
+data/generated_resumes/*
+data/exports/*.csv
+
+# Assets (resume template is committed, generated ones are not)
+assets/resume_template.pdf
+
+# Playwright
+user_data/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
