@@ -37,16 +37,22 @@ class LinkedInScraper:
         logger.info("Logging into LinkedIn...")
 
         await self._load_cookies()
-        await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded")
-        await asyncio.sleep(3)
+        try:
+            await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            logger.warning(f"Feed page goto timeout: {e}")
+        await asyncio.sleep(2)
 
         if "feed" in self.page.url:
             logger.info("Cookies worked - already logged in")
             return True
 
         logger.info("Cookies expired, trying form login...")
-        await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded")
-        await asyncio.sleep(3)
+        try:
+            await self.page.goto(self.LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
+        except Exception as e:
+            logger.warning(f"Login page goto timeout: {e}")
+        await asyncio.sleep(2)
 
         current_url = self.page.url
         page_title = await self.page.title()
@@ -76,10 +82,13 @@ class LinkedInScraper:
         return False
 
     async def ensure_logged_in(self):
-        await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded", timeout=30000)
-        await asyncio.sleep(3)
-        if "feed" in self.page.url:
-            return True
+        try:
+            await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded", timeout=30000)
+            await asyncio.sleep(2)
+            if "feed" in self.page.url:
+                return True
+        except Exception:
+            logger.warning("Feed page timeout in ensure_logged_in")
         return await self.login()
 
     def _build_search_url(self, keyword: str) -> str:
@@ -100,127 +109,27 @@ class LinkedInScraper:
         try:
             await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
         except Exception:
-            logger.warning(f"Timeout navigating to search URL")
-        await asyncio.sleep(5)
+            logger.warning("Timeout navigating to search URL")
+        await asyncio.sleep(3)
 
-        jobs = []
-        current_url = self.page.url
+        page_url = self.page.url
         page_title = await self.page.title()
-        logger.info(f"Current URL: {current_url}")
         logger.info(f"Page title: {page_title}")
 
-        if "login" in current_url:
+        if "login" in page_url:
             logger.warning("Redirected to login during search")
-            ok = await self.login()
-            if not ok:
-                return []
-            await self.page.goto(url, wait_until="domcontentloaded")
-            await asyncio.sleep(5)
+            return []
 
         await self._dismiss_modal()
-        await asyncio.sleep(2)
+        await asyncio.sleep(1)
 
-        card_selectors = [
-            ".job-card-container",
-            ".job-card-list",
-            ".jobs-search-results__list-item",
-            "li[data-occludable-job-id]",
-            "article",
-            ".scaffold-layout__list",
-            ".jobs-search-two-panel__list-item",
-            ".jobs-search-results-list",
-            '[class*="job-card"]',
-            '[data-job-id]',
-            ".display-flex > li",
-            ".jobs-search-results--list",
-            '.jobs-search-results-list li',
-            '[data-view-name="job-card"]',
-            '[data-view-name="search-entity"]',
-            '.reusable-search__result-container',
-            'li[data-reusable-list-item]',
-        ]
-
-        cards = []
-        for sel in card_selectors:
-            try:
-                cards = await self.page.query_selector_all(sel)
-                if cards:
-                    logger.info(f"Found {len(cards)} cards using: {sel}")
-                    break
-            except Exception:
-                continue
-
-        if not cards:
-            logger.warning("No job cards found with any selector")
-            html = await self.page.evaluate("""() => {
-                const main = document.querySelector('[role="main"], #main, .jobs-search-results');
-                if (!main) return 'NO_MAIN';
-                return main.innerHTML.substring(0, 5000);
-            }""")
-            logger.info(f"Main area HTML: {html}")
-            jobs = await self._extract_jobs_via_js(keyword)
-            if jobs:
-                logger.info(f"Extracted {len(jobs)} jobs via JS fallback")
-                return jobs
-            return jobs
-
-        max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
-        for i in range(max_cards):
-            try:
-                cards = await self.page.query_selector_all(card_selectors[0])
-                if not cards:
-                    cards = await self.page.query_selector_all(card_selectors[1])
-                if not cards or i >= len(cards):
-                    break
-
-                await cards[i].click()
-                await asyncio.sleep(2)
-
-                title = keyword
-                company = "Unknown"
-                location = "Remote UK"
-                description = ""
-
-                for sel in [".job-details-jobs-unified-top-card__job-title",
-                            ".job-details__title",
-                            "h1",
-                            ".t-16.t-bold"]:
-                    el = await self.page.query_selector(sel)
-                    if el:
-                        title = (await el.inner_text()).strip()
-                        break
-
-                for sel in [".job-details-jobs-unified-top-card__company-name",
-                            ".job-details__company",
-                            ".job-card-container__company-name",
-                            '[data-testid="company-name"]']:
-                    el = await self.page.query_selector(sel)
-                    if el:
-                        company = (await el.inner_text()).strip()
-                        break
-
-                for sel in [".job-details-jobs-unified-top-card__workplace-type",
-                            ".job-details__location",
-                            ".job-card-container__metadata-wrapper"]:
-                    el = await self.page.query_selector(sel)
-                    if el:
-                        location = (await el.inner_text()).strip()
-                        break
-
-                jobs.append({
-                    "title": title,
-                    "company": company,
-                    "location": location,
-                    "description": description,
-                    "url": self.page.url,
-                    "platform": "linkedin",
-                })
-            except Exception as e:
-                logger.debug(f"LinkedIn card {i} error: {e}")
-                continue
-
-        logger.info(f"Found {len(jobs)} LinkedIn jobs for '{keyword}'")
-        return jobs
+        jobs = await self._extract_jobs_via_js(keyword)
+        tracked = jobs[:self.config.get("max_applications_per_run", 25)]
+        if tracked:
+            logger.info(f"Found {len(tracked)} LinkedIn jobs for '{keyword}'")
+        else:
+            logger.warning(f"No jobs found for '{keyword}'")
+        return tracked
 
     async def _extract_jobs_via_js(self, keyword: str) -> list[dict]:
         data = await self.page.evaluate("""() => {
