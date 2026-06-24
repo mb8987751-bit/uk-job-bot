@@ -89,23 +89,24 @@ class LinkedInApply:
 
     async def _generate_cover_letter(self, job: dict) -> str:
         resume = self._load_resume()
-        if Config.GEMINI_API_KEY and resume:
-            full_prompt = f"""Write a professional cover letter (3-4 paragraphs) for a {job['title']} position at {job.get('company', 'the company')}.
+        if not Config.GEMINI_API_KEY:
+            return f"I am excited to apply for the {job['title']} position at {job.get('company', 'your company')} and would love to contribute to your team."
 
-Job Description: {job.get('description', '')[:2000]}
-
-Applicant Resume:
-{resume[:2000]}
-
+        desc = job.get('description', '')[:2000]
+        prompt = f"""Write a professional cover letter (3-4 paragraphs) for a {job['title']} position at {job.get('company', 'the company')}.
+Job Description: {desc}
 The applicant is based in Pakistan and authorized to work remotely for UK companies.
-Keep it concise, professional, and tailored to the job. Use the applicant's experience from the resume."""
-            try:
-                response = self.resume_gen.client.models.generate_content(
-                    model="gemini-2.0-flash", contents=full_prompt
-                )
-                return response.text
-            except Exception as e:
-                logger.warning(f"Gemini cover letter failed: {e}")
+Keep it concise, professional, and tailored to the job description."""
+        if resume:
+            prompt += f"\n\nThe applicant's background:\n{resume[:2000]}"
+
+        try:
+            response = self.resume_gen.client.models.generate_content(
+                model="gemini-2.0-flash", contents=prompt
+            )
+            return response.text
+        except Exception as e:
+            logger.warning(f"Gemini cover letter failed: {e}")
         return f"I am excited to apply for the {job['title']} position and bring my skills to your team."
 
     async def _find_easy_apply(self):
