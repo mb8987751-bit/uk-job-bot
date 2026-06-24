@@ -76,7 +76,7 @@ class LinkedInScraper:
         return False
 
     async def ensure_logged_in(self):
-        await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded")
+        await self.page.goto(self.BASE_URL + "/feed/", wait_until="domcontentloaded", timeout=30000)
         await asyncio.sleep(3)
         if "feed" in self.page.url:
             return True
@@ -95,14 +95,12 @@ class LinkedInScraper:
         return f"{self.BASE_URL}/jobs/search/?{urlencode(params)}"
 
     async def search_jobs(self, keyword: str) -> list[dict]:
-        ok = await self.ensure_logged_in()
-        if not ok:
-            logger.warning("Skipping LinkedIn search - not logged in")
-            return []
-
         url = self._build_search_url(keyword)
         logger.info(f"LinkedIn searching: {keyword}")
-        await self.page.goto(url, wait_until="domcontentloaded")
+        try:
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        except Exception:
+            logger.warning(f"Timeout navigating to search URL")
         await asyncio.sleep(5)
 
         jobs = []
@@ -111,12 +109,15 @@ class LinkedInScraper:
         logger.info(f"Current URL: {current_url}")
         logger.info(f"Page title: {page_title}")
 
-        await self._dismiss_modal()
+        if "login" in current_url:
+            logger.warning("Redirected to login during search")
+            ok = await self.login()
+            if not ok:
+                return []
+            await self.page.goto(url, wait_until="domcontentloaded")
+            await asyncio.sleep(5)
 
-        try:
-            await self.page.wait_for_selector('[class*="job-card"]', timeout=20000)
-        except Exception:
-            pass
+        await self._dismiss_modal()
 
         card_selectors = [
             ".job-card-container",
@@ -145,15 +146,6 @@ class LinkedInScraper:
 
         if not cards:
             logger.warning("No job cards found with any selector")
-            main_html = await self.page.evaluate("""() => {
-                const main = document.querySelector('#main, .jobs-search-results, [role="main"], .scaffold-layout__list, .jobs-search-results-list');
-                return main ? main.innerHTML.substring(0, 8000) : 'NO_MAIN_ELEM';
-            }""")
-            logger.info(f"Main HTML: {main_html}")
-            all_html = await self.page.evaluate("document.body.innerHTML.substring(0, 3000)")
-            logger.info(f"Body HTML first 3k: {all_html}")
-            await self.page.screenshot(path=f"data/linkedin_debug_{keyword.replace(' ', '_')}.png", full_page=True)
-            logger.info("Screenshot saved")
             return jobs
 
         max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
@@ -215,7 +207,7 @@ class LinkedInScraper:
         return jobs
 
     async def _dismiss_modal(self):
-        modal_selectors = [
+        selectors = [
             ".contextual-sign-in-modal__modal-dismiss-icon",
             "button[aria-label='Dismiss']",
             ".artdeco-modal__dismiss",
@@ -223,16 +215,30 @@ class LinkedInScraper:
             ".modal__dismiss",
             'button:has(svg use[href*="close"])',
         ]
-        for sel in modal_selectors:
+        for sel in selectors:
             try:
                 btn = await self.page.query_selector(sel)
                 if btn:
-                    await btn.click()
+                    await btn.click(force=True)
                     await asyncio.sleep(1)
                     logger.info(f"Dismissed modal with: {sel}")
                     return True
             except Exception:
                 continue
+        js_result = await self.page.evaluate("""() => {
+            const els = document.querySelectorAll('[class*="dismiss"], [class*="close"], [class*="modal"] button, .artdeco-modal__dismiss');
+            for (const el of els) {
+                if (el.offsetParent !== null) {
+                    el.click();
+                    return 'Clicked: ' + (el.className || el.tagName);
+                }
+            }
+            return 'No visible dismiss button found';
+        }""")
+        if "Clicked" in js_result:
+            logger.info(f"Modal dismissed via JS: {js_result}")
+            await asyncio.sleep(1)
+            return True
         return False
 
     async def run(self) -> list[dict]:
