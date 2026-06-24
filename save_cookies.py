@@ -1,28 +1,29 @@
-import asyncio
-import json
-import os
+import asyncio, json, os
 from playwright.async_api import async_playwright
 
 async def main():
-    print("=== LinkedIn Cookie Saver ===")
-    print("This will open a browser. Log into LinkedIn manually.")
-    print("Cookies will be saved after login.\n")
-
+    os.makedirs("data/linkedin_session", exist_ok=True)
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(
+        ctx = await p.chromium.launch_persistent_context(
+            "data/linkedin_session",
+            headless=False,
             viewport={"width": 1280, "height": 800},
         )
-        page = await context.new_page()
-
+        page = ctx.pages[0]
         await page.goto("https://www.linkedin.com/login", wait_until="domcontentloaded")
-        input("Press Enter AFTER you have logged into LinkedIn in the browser...")
-
-        cookies = await context.cookies()
-        os.makedirs("data", exist_ok=True)
+        print("Browser opened. Log into LinkedIn in the window.")
+        print("This script will wait up to 5 minutes...")
+        for i in range(300):
+            await asyncio.sleep(1)
+            if "feed" in page.url:
+                print(f"Logged in! ({i}s)")
+                break
+            if i % 30 == 0 and i > 0:
+                print(f"Waiting... {i}s")
+        cookies = await ctx.cookies()
         with open("data/linkedin_cookies.json", "w") as f:
             json.dump(cookies, f, indent=2)
-        print(f"Saved {len(cookies)} cookies to data/linkedin_cookies.json")
-        await browser.close()
+        print(f"Saved {len(cookies)} cookies!")
+        await ctx.close()
 
 asyncio.run(main())

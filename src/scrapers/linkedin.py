@@ -90,31 +90,45 @@ class LinkedInScraper:
     async def search_jobs(self, keyword: str) -> list[dict]:
         url = self._build_search_url(keyword)
         logger.info(f"LinkedIn searching: {keyword}")
-        await self.page.goto(url, wait_until="domcontentloaded")
+        logger.info(f"Navigating to: {url}")
+        await self.page.goto(url, wait_until="networkidle")
         await asyncio.sleep(5)
 
         jobs = []
+        current_url = self.page.url
+        page_title = await self.page.title()
+        logger.info(f"Current URL: {current_url}")
+        logger.info(f"Page title: {page_title}")
+
         card_selectors = [
             ".job-card-container",
             ".job-card-list",
             ".jobs-search-results__list-item",
             "li[data-occludable-job-id]",
             "article",
+            ".scaffold-layout__list",
+            ".jobs-search-two-panel__list-item",
         ]
 
         cards = []
         for sel in card_selectors:
-            cards = await self.page.query_selector_all(sel)
-            if cards:
-                logger.info(f"Found cards using selector: {sel}")
-                break
+            try:
+                cards = await self.page.query_selector_all(sel)
+                if cards:
+                    logger.info(f"Found cards using selector: {sel}")
+                    break
+            except Exception:
+                continue
 
         if not cards:
             logger.warning("No job cards found with any selector")
-            body = await self.page.query_selector("body")
-            if body:
-                text = await body.inner_text()
-                logger.info(f"Page snippet: {text[:200]}")
+            body_text = await self.page.evaluate("document.body.innerText.substring(0, 2000)")
+            logger.info(f"Page body: {body_text}")
+            try:
+                await self.page.screenshot(path=f"data/linkedin_debug_{keyword.replace(' ', '_')}.png", full_page=True)
+                logger.info("Screenshot saved")
+            except Exception as e:
+                logger.warning(f"Screenshot failed: {e}")
             return jobs
 
         max_cards = min(len(cards), self.config.get("max_applications_per_run", 25))
