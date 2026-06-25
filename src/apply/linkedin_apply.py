@@ -37,14 +37,11 @@ class LinkedInApply:
     async def _apply_with_timeout(self, job: dict) -> bool:
         logger.info(f"LinkedIn applying: {job['title']}")
 
-        navigated = await self.page.evaluate(f"""
-            async () => {{
-                try {{
-                    await new Promise(r => {{ window.location.href = '{job["url"]}'; setTimeout(r, 3000); }});
-                    return 'navigated';
-                }} catch(e) {{ return 'error: ' + e.message; }}
-            }}
-        """)
+        await self.page.evaluate(f"window.location.href = '{job['url']}'")
+        try:
+            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
+        except Exception:
+            pass
         await asyncio.sleep(3)
 
         current = self.page.url
@@ -54,7 +51,7 @@ class LinkedInApply:
 
         await self._extract_job_details(job)
 
-        easy_btn = await self._find_easy_apply()
+        easy_btn = await self._find_apply_button()
         if not easy_btn:
             logger.info(f"No Easy Apply: {job['title']}")
             return False
@@ -63,8 +60,15 @@ class LinkedInApply:
             await easy_btn.click()
         except Exception:
             clicked = await self.page.evaluate("""() => {
-                const btn = document.querySelector('button[aria-label*="Easy Apply"], .jobs-apply-button');
-                if (btn) { btn.click(); return true; }
+                const texts = ['Easy Apply', 'Apply now', 'Apply'];
+                for (const t of texts) {
+                    const els = document.querySelectorAll('button, a, span');
+                    for (const el of els) {
+                        if (el.innerText.trim() === t && el.offsetParent !== null) {
+                            el.click(); return true;
+                        }
+                    }
+                }
                 return false;
             }""")
             if not clicked:
@@ -75,17 +79,21 @@ class LinkedInApply:
 
     async def _extract_job_details(self, job: dict):
         data = await self.page.evaluate("""() => {
-            const descEl = document.querySelector('.show-more-less-html__markup, article.description, div[class*="description"], div[class*="job-details"]');
-            const companyEl = document.querySelector('.job-details-jobs-unified-top-card__company-name a, a[class*="company"], div[class*="company"]');
+            const descEl = document.querySelector('.show-more-less-html__markup, [class*="description"], [class*="job-details"], article');
+            const companyEl = document.querySelector('[class*="company"] a, a[class*="company"], [class*="org-name"], [class*="employer"]');
+            const titleEl = document.querySelector('h1, [class*="job-title"], [class*="top-card"]');
             return {
                 description: descEl ? descEl.innerText.trim().substring(0, 3000) : '',
-                company: companyEl ? companyEl.innerText.trim() : ''
+                company: companyEl ? companyEl.innerText.trim() : '',
+                title: titleEl ? titleEl.innerText.trim() : ''
             };
         }""")
         if data.get("company"):
             job["company"] = data["company"]
         if data.get("description"):
             job["description"] = data["description"]
+        if data.get("title"):
+            job["title"] = data["title"]
 
     async def _generate_cover_letter(self, job: dict) -> str:
         resume = self._load_resume()
@@ -109,12 +117,22 @@ Keep it concise, professional, and tailored to the job description."""
             logger.warning(f"Gemini cover letter failed: {e}")
         return f"I am excited to apply for the {job['title']} position and bring my skills to your team."
 
-    async def _find_easy_apply(self):
-        for _ in range(10):
-            btn = await self.page.query_selector('button[aria-label*="Easy Apply"], .jobs-apply-button')
-            if btn:
-                return btn
-            await asyncio.sleep(0.5)
+    async def _find_apply_button(self):
+        selectors = [
+            'button[aria-label*="Easy Apply"]',
+            'button[aria-label*="Apply"]',
+            '.jobs-apply-button',
+            'button:has-text("Easy Apply")',
+            'button:has-text("Apply")',
+            'a:has-text("Easy Apply")',
+        ]
+        for sel in selectors:
+            try:
+                btn = await self.page.wait_for_selector(sel, timeout=2000)
+                if btn and await btn.is_visible():
+                    return btn
+            except Exception:
+                continue
         return None
 
     async def _fill_form(self, job: dict) -> bool:
