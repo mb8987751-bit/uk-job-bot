@@ -31,7 +31,8 @@ class ApplicationTracker:
                 platform TEXT,
                 location TEXT,
                 applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                status TEXT DEFAULT 'applied'
+                status TEXT DEFAULT 'applied',
+                notes TEXT DEFAULT ''
             )
         """)
         conn.execute("""
@@ -40,6 +41,10 @@ class ApplicationTracker:
                 count INTEGER DEFAULT 0
             )
         """)
+        try:
+            conn.execute("ALTER TABLE applications ADD COLUMN notes TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
         conn.close()
         logger.info("Database initialized")
@@ -53,6 +58,12 @@ class ApplicationTracker:
     def update_status(self, url: str, new_status: str):
         conn = self._get_conn()
         conn.execute("UPDATE applications SET status = ? WHERE url = ?", (new_status, url))
+        conn.commit()
+        conn.close()
+
+    def update_notes(self, url: str, notes: str):
+        conn = self._get_conn()
+        conn.execute("UPDATE applications SET notes = ? WHERE url = ?", (notes, url))
         conn.commit()
         conn.close()
 

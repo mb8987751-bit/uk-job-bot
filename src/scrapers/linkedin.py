@@ -114,6 +114,7 @@ class LinkedInScraper:
 
         page_url = self.page.url
         page_title = await self.page.title()
+        logger.info(f"Search URL after navigation: {page_url}")
         logger.info(f"Page title: {page_title}")
 
         if "login" in page_url:
@@ -135,7 +136,6 @@ class LinkedInScraper:
         data = await self.page.evaluate("""() => {
             const results = [];
             const allText = document.body.innerText;
-            const lines = allText.split('\\n').filter(l => l.trim());
             const skipWords = ['Sign in', 'password', 'email', 'username', 'Skip to', 'Dismiss', 'Join now'];
             const isLoginPage = skipWords.some(w => allText.includes(w));
             if (isLoginPage && !allText.includes('jobs')) return results;
@@ -143,12 +143,29 @@ class LinkedInScraper:
             const links = document.querySelectorAll('a[href*="/jobs/view"]');
             for (const link of links) {
                 const title = link.innerText || link.title || '';
-                if (title.trim() && title.length < 200 && !title.includes('javascript')) {
+                if (!title.trim() || title.length >= 200) continue;
+
+                const card = link.closest('li');
+                const container = card || link.parentElement?.parentElement?.parentElement;
+                const cardText = container ? container.innerText || '' : '';
+
+                const hasEasyApply = cardText.includes('Easy Apply') || cardText.includes('Easy apply');
+
+                if (hasEasyApply) {
                     results.push({ title: title.trim(), url: link.href });
                 }
             }
             return results;
         }""")
+        ea_count = len(data)
+        all_data = await self.page.evaluate("""() => {
+            const links = document.querySelectorAll('a[href*="/jobs/view"]');
+            return Array.from(links).filter(l => {
+                const t = (l.innerText || l.title || '').trim();
+                return t && t.length < 200;
+            }).length;
+        }""")
+        logger.info(f"Search page: {ea_count} Easy Apply jobs out of {all_data} total job links")
         jobs = []
         seen = set()
         for item in data:

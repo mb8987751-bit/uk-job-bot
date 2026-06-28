@@ -48,7 +48,7 @@ async def main():
 
             for job in jobs[:remaining]:
                 status = tracker.get_status(job["url"])
-                if status in ("submitted", "no_easy_apply"):
+                if status == "submitted":
                     total_skipped += 1
                     continue
 
@@ -62,7 +62,7 @@ async def main():
                 )
 
                 try:
-                    success = await asyncio.wait_for(applier.apply(job), timeout=120)
+                    result = await asyncio.wait_for(applier.apply(job), timeout=120)
                 except asyncio.TimeoutError:
                     logger.warning(f"Timeout applying: {job['title']}")
                     tracker.update_status(job["url"], "timeout")
@@ -72,12 +72,13 @@ async def main():
                     tracker.update_status(job["url"], "error")
                     continue
 
-                if success:
-                    tracker.update_status(job["url"], "submitted")
+                tracker.update_status(job["url"], result)
+                if applier.last_debug:
+                    tracker.update_notes(job["url"], applier.last_debug)
+
+                if result == "submitted":
                     total_applied += 1
                     logger.info(f"✓ Applied ({total_applied}/{remaining}): {job['title']}")
-                else:
-                    tracker.update_status(job["url"], "no_easy_apply")
 
                 await browser.human_delay()
 

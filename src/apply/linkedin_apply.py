@@ -1,4 +1,5 @@
 ﻿import asyncio
+import json
 import random
 import os
 
@@ -18,6 +19,7 @@ class LinkedInApply:
         self.page.set_default_timeout(25000)
         self.resume_text = resume_text
         self.resume_gen = ResumeGenerator()
+        self.last_debug = ""
 
     def _load_resume(self) -> str:
         if self.resume_text:
@@ -27,12 +29,14 @@ class LinkedInApply:
                 return f.read()
         return ""
 
-    async def apply(self, job: dict) -> bool:
+    async def apply(self, job: dict) -> str:
+        self.last_debug = ""
         try:
-            return await self._apply_with_timeout(job)
+            success = await self._apply_with_timeout(job)
+            return "submitted" if success else "no_easy_apply"
         except Exception as e:
             logger.debug(f"Apply error: {job['title']}: {e}")
-            return False
+            return "error"
 
     async def _apply_with_timeout(self, job: dict) -> bool:
         logger.info(f"LinkedIn applying: {job['title']}")
@@ -51,31 +55,76 @@ class LinkedInApply:
 
         await self._extract_job_details(job)
 
-        easy_btn = await self._find_apply_button()
-        if not easy_btn:
+        btn_found = await self._click_easy_apply()
+        if not btn_found:
+            await self._debug_page_buttons()
             logger.info(f"No Easy Apply: {job['title']}")
             return False
 
-        try:
-            await easy_btn.click()
-        except Exception:
-            clicked = await self.page.evaluate("""() => {
-                const texts = ['Easy Apply', 'Apply now', 'Apply'];
-                for (const t of texts) {
-                    const els = document.querySelectorAll('button, a, span');
-                    for (const el of els) {
-                        if (el.innerText.trim() === t && el.offsetParent !== null) {
-                            el.click(); return true;
-                        }
-                    }
-                }
-                return false;
-            }""")
-            if not clicked:
-                return False
         await asyncio.sleep(2)
-
         return await self._fill_form(job)
+
+    async def _debug_page_buttons(self):
+        data = await self.page.evaluate("""() => {
+            const all = document.querySelectorAll('button, a, span, div[role="button"]');
+            const items = [];
+            for (const el of all) {
+                const t = el.innerText.trim();
+                if (t && t.length < 100 && el.offsetParent !== null) {
+                    items.push({ tag: el.tagName, text: t, class: (el.className || '').substring(0, 80) });
+                }
+            }
+            const job_btns = items.filter(x =>
+                x.text.includes('Apply') || x.text.includes('Easy') ||
+                x.text.includes('applied') || x.text.includes('submit')
+            );
+            return JSON.stringify(job_btns.length ? job_btns : items.slice(0, 20));
+        }""")
+        self.last_debug = f"buttons: {data[:200]}"
+        logger.info(f"Page debug for '{await self.page.title()}': {self.last_debug}")
+
+    async def _click_easy_apply(self) -> bool:
+        selectors = [
+            'button:has-text("Easy Apply")',
+            'button:has-text("easy apply")',
+            'button:has-text("Easy apply")',
+            '[data-control-name*="apply"]',
+            '[class*="jobs-apply"] button',
+            'a:has-text("Easy Apply")',
+            'span:has-text("Easy Apply")',
+            'div[role="button"]:has-text("Easy Apply")',
+        ]
+        for sel in selectors:
+            try:
+                el = await self.page.wait_for_selector(sel, timeout=2000)
+                if el and await el.is_visible():
+                    await el.click()
+                    return True
+            except Exception:
+                continue
+        clicked = await self.page.evaluate("""() => {
+            const all = document.querySelectorAll('button, a, span, div[role="button"]');
+            for (const el of all) {
+                const t = el.innerText.trim();
+                if (t === 'Easy Apply' && el.offsetParent !== null) {
+                    el.click(); return true;
+                }
+            }
+            for (const el of all) {
+                const t = el.innerText.trim();
+                if (t.includes('Easy') && t.includes('Apply') && el.offsetParent !== null) {
+                    el.click(); return true;
+                }
+            }
+            const cls = document.querySelectorAll('[class*="easy" i]');
+            for (const el of cls) {
+                if (el.offsetParent !== null && el.innerText.trim().includes('Apply')) {
+                    el.click(); return true;
+                }
+            }
+            return false;
+        }""")
+        return clicked
 
     async def _extract_job_details(self, job: dict):
         data = await self.page.evaluate("""() => {
@@ -116,24 +165,6 @@ Keep it concise, professional, and tailored to the job description."""
         except Exception as e:
             logger.warning(f"Gemini cover letter failed: {e}")
         return f"I am excited to apply for the {job['title']} position and bring my skills to your team."
-
-    async def _find_apply_button(self):
-        selectors = [
-            'button[aria-label*="Easy Apply"]',
-            'button[aria-label*="Apply"]',
-            '.jobs-apply-button',
-            'button:has-text("Easy Apply")',
-            'button:has-text("Apply")',
-            'a:has-text("Easy Apply")',
-        ]
-        for sel in selectors:
-            try:
-                btn = await self.page.wait_for_selector(sel, timeout=2000)
-                if btn and await btn.is_visible():
-                    return btn
-            except Exception:
-                continue
-        return None
 
     async def _fill_form(self, job: dict) -> bool:
         cover_letter = None
