@@ -143,29 +143,12 @@ class LinkedInScraper:
             const links = document.querySelectorAll('a[href*="/jobs/view"]');
             for (const link of links) {
                 const title = link.innerText || link.title || '';
-                if (!title.trim() || title.length >= 200) continue;
-
-                const card = link.closest('li');
-                const container = card || link.parentElement?.parentElement?.parentElement;
-                const cardText = container ? container.innerText || '' : '';
-
-                const hasEasyApply = cardText.includes('Easy Apply') || cardText.includes('Easy apply');
-
-                if (hasEasyApply) {
+                if (title.trim() && title.length < 200 && !title.includes('javascript')) {
                     results.push({ title: title.trim(), url: link.href });
                 }
             }
             return results;
         }""")
-        ea_count = len(data)
-        all_data = await self.page.evaluate("""() => {
-            const links = document.querySelectorAll('a[href*="/jobs/view"]');
-            return Array.from(links).filter(l => {
-                const t = (l.innerText || l.title || '').trim();
-                return t && t.length < 200;
-            }).length;
-        }""")
-        logger.info(f"Search page: {ea_count} Easy Apply jobs out of {all_data} total job links")
         jobs = []
         seen = set()
         for item in data:
