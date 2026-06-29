@@ -29,40 +29,46 @@ class LinkedInApply:
                 return f.read()
         return ""
 
-    async def apply(self, job: dict) -> str:
-        self.last_debug = ""
-        try:
-            success = await self._apply_with_timeout(job)
-            return "submitted" if success else "no_easy_apply"
-        except Exception as e:
-            logger.debug(f"Apply error: {job['title']}: {e}")
+    async def apply_jobs(self, jobs: list[dict]) -> list[tuple[str, str, str]]:
+        results = []
+        for idx, job in enumerate(jobs):
+            self.last_debug = ""
+            try:
+                status = await self._process_job_at_index(job, idx)
+                results.append((job["url"], status, self.last_debug))
+                if status == "submitted":
+                    logger.info(f"✓ Applied: {job['title']}")
+            except Exception as e:
+                logger.debug(f"Apply error: {job['title']}: {e}")
+                results.append((job["url"], "error", ""))
+        return results
+
+    async def _process_job_at_index(self, job: dict, idx: int) -> str:
+        logger.info(f"Processing job {idx}: {job['title']}")
+        clicked = await self.page.evaluate(f"""
+            (() => {{
+                const links = document.querySelectorAll('a[href*="/jobs/view"]');
+                if (links[{idx}]) {{
+                    links[{idx}].click();
+                    return true;
+                }}
+                return false;
+            }})()
+        """)
+        if not clicked:
             return "error"
-
-    async def _apply_with_timeout(self, job: dict) -> bool:
-        logger.info(f"LinkedIn applying: {job['title']}")
-
-        await self.page.evaluate(f"window.location.href = '{job['url']}'")
-        try:
-            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-        except Exception:
-            pass
         await asyncio.sleep(3)
-
-        current = self.page.url
-        if "login" in current:
-            logger.info(f"Redirected to login - skip: {job['title']}")
-            return False
-
         await self._extract_job_details(job)
-
         btn_found = await self._click_easy_apply()
         if not btn_found:
             await self._debug_page_buttons()
-            logger.info(f"No Easy Apply: {job['title']}")
-            return False
-
+            return "no_easy_apply"
         await asyncio.sleep(2)
-        return await self._fill_form(job)
+        filled = await self._fill_form(job)
+        if filled:
+            await self._dismiss_success_modal()
+            return "submitted"
+        return "no_easy_apply"
 
     async def _debug_page_buttons(self):
         data = await self.page.evaluate("""() => {
@@ -274,5 +280,23 @@ Keep it concise, professional, and tailored to the job description."""
                         await radio.click()
                         await asyncio.sleep(0.5)
                     continue
+            except Exception:
+                continue
+
+    async def _dismiss_success_modal(self):
+        selectors = [
+            'button[aria-label="Dismiss"]',
+            'button[aria-label="Close"]',
+            '.artdeco-modal__dismiss',
+            'button:has-text("Done")',
+            'button:has-text("Close")',
+        ]
+        for sel in selectors:
+            try:
+                btn = await self.page.wait_for_selector(sel, timeout=5000)
+                if btn and await btn.is_visible():
+                    await btn.click()
+                    await asyncio.sleep(1)
+                    return
             except Exception:
                 continue

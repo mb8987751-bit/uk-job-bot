@@ -37,48 +37,66 @@ async def main():
         if linkedin_cfg.get("enabled", True):
             logger.info("=== LinkedIn Phase ===")
             scraper = LinkedInScraper(browser)
-            jobs = await scraper.run()
-            logger.info(f"LinkedIn: found {len(jobs)} jobs")
-
             applier = LinkedInApply(browser, resume_text=resume_text)
+
+            logged_in = await scraper.login()
+            if not logged_in:
+                logger.warning("LinkedIn login failed, skipping")
+                return
+
             limit = linkedin_cfg.get("max_applications_per_run", 50)
             daily_max = settings["bot_settings"]["max_daily_applications"]
-            today_count = tracker.get_today_count()
-            remaining = min(limit, daily_max - today_count)
+            keyword_run_count = 0
 
-            for job in jobs[:remaining]:
-                status = tracker.get_status(job["url"])
-                if status == "submitted":
-                    total_skipped += 1
+            for keyword in linkedin_cfg["keywords"]:
+                if keyword_run_count >= limit:
+                    break
+                today_count = tracker.get_today_count()
+                if today_count >= daily_max:
+                    logger.info("Daily limit reached")
+                    break
+
+                jobs = await scraper.search_jobs(keyword)
+                if not jobs:
                     continue
 
-                tracker.record_application(
-                    url=job["url"],
-                    title=job["title"],
-                    company=job["company"],
-                    platform="linkedin",
-                    location=job.get("location", "Remote UK"),
-                    status="pending",
-                )
+                pending = []
+                for job in jobs:
+                    status = tracker.get_status(job["url"])
+                    if status == "submitted":
+                        total_skipped += 1
+                        continue
+                    tracker.record_application(
+                        url=job["url"],
+                        title=job["title"],
+                        company=job["company"],
+                        platform="linkedin",
+                        location=job.get("location", "Remote UK"),
+                        status="pending",
+                    )
+                    pending.append(job)
+
+                if not pending:
+                    continue
 
                 try:
-                    result = await asyncio.wait_for(applier.apply(job), timeout=120)
+                    results = await asyncio.wait_for(
+                        applier.apply_jobs(pending), timeout=300
+                    )
                 except asyncio.TimeoutError:
-                    logger.warning(f"Timeout applying: {job['title']}")
-                    tracker.update_status(job["url"], "timeout")
+                    logger.warning(f"Timeout processing keyword: {keyword}")
                     continue
                 except Exception as e:
-                    logger.error(f"Apply error for {job['title']}: {e}")
-                    tracker.update_status(job["url"], "error")
+                    logger.error(f"Error processing keyword {keyword}: {e}")
                     continue
 
-                tracker.update_status(job["url"], result)
-                if applier.last_debug:
-                    tracker.update_notes(job["url"], applier.last_debug)
-
-                if result == "submitted":
-                    total_applied += 1
-                    logger.info(f"✓ Applied ({total_applied}/{remaining}): {job['title']}")
+                for url, result, debug in results:
+                    tracker.update_status(url, result)
+                    if debug:
+                        tracker.update_notes(url, debug)
+                    if result == "submitted":
+                        keyword_run_count += 1
+                        total_applied += 1
 
                 await browser.human_delay()
 
